@@ -1,0 +1,51 @@
+name: update
+
+on:
+  schedule:
+    - cron: "30 6,18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: macos-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Install maltmill
+        run: brew install Songmu/tap/maltmill
+
+      - name: Update formulas
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make update
+
+      - name: Create update pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git diff --quiet -- Formula || exit_code=$?
+          if [ "${exit_code:-0}" -eq 0 ]; then
+            exit 0
+          fi
+
+          branch="update-formula"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git switch -c "$branch"
+          git add Formula/*.rb
+          git commit -m "Update formula to latest release"
+          git push --force origin "$branch"
+
+          if ! gh pr list --head "$branch" --state open --json number --jq '.[0].number' | grep . >/dev/null; then
+            gh pr create \
+              --title "Update formula to latest release" \
+              --body "" \
+              --base main
+          fi
